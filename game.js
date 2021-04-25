@@ -192,6 +192,8 @@ function finishDestroying(destr) {
 
     if (destruction.length == 0 && gameState == State.DESTROY) {
         gameState = State.STAND;
+        checkGravity();
+        updateSelector();
     }
 }
 
@@ -236,7 +238,11 @@ function checkGravity() {
                     targetY: y + 1,
                     id: tileAt(x, y),
                 };
-                level[y * levelW + x] = levelBackground[y * levelW + x];
+                if (levelBackground[y * levelW + x] != tileAt(x, y)) {
+                    level[y * levelW + x] = levelBackground[y * levelW + x];
+                } else {
+                    level[y * levelW + x] = 0;
+                }
                 gravity.objs.push(fallObj);
                 objs.push(fallObj);
                 gravity.gravitying = true;
@@ -511,12 +517,14 @@ function onMovedToSquare() {
 
 function startMove() {
     if (character.targetX != character.x || character.targetY != character.targetY) {
-        if (crumbles[tileAt(character.x, character.y + 1)]) {
-            destruction.push({
-                timer: 0,
-                x: character.x,
-                y: character.y + 1,
-            });
+        if (!solid[tileAt(character.targetX, character.targetY)]) {
+            if (crumbles[tileAt(character.x, character.y + 1)]) {
+                destruction.push({
+                    timer: 0,
+                    x: character.x,
+                    y: character.y + 1,
+                });
+            }
         }
     }
 }
@@ -589,6 +597,7 @@ function characterAnimFinished() {
         cancelAnim = true;
     }
     character.animFrameIndex = 0;
+    checkGravity();
     updateSelector();
     startMove();
 }
@@ -640,6 +649,7 @@ function loadLevel() {
         gameState = State.STAND;
         wonLevel = false;
         checkGravity();
+        updateSelector();
     }
 }
 

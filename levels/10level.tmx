@@ -3,7 +3,7 @@
  <tileset firstgid="1" source="sample-tileset.tsx"/>
  <layer id="1" name="Tile Layer 1" width="10" height="7">
   <data encoding="base64" compression="zlib">
-   eAFjYWBgYCSAWYDyIEyKOjY86mHmcQPVgDAus2HqYPZSoo4Dag+yGchskB0w+0A0AFSsAKM=
+   eAFjYWBgYCSAWYDyIEyKOjY86mHmcQPVgDAus2HqYPaSo44T6g52qD0gM2D24qJBagBcjADx
   </data>
  </layer>
 </map>
