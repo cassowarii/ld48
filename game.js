@@ -35,7 +35,8 @@ let levelH = canvasH / tileSize / drawScale;
 
 let levelNumber = 1;
 
-let level = levels[0];
+let level; /* actual level contents that are displayed */
+let levelBackground; /* non-solid blocks that other things move in front of */
 
 let framestep = 1000/60;
 
@@ -62,6 +63,7 @@ let ID = {
     love2: 15,
 };
 
+/* I am so sorry, I have no idea why i defined all the properties like this */
 let selectable = {};
 selectable[ID.empty] = 1;
 selectable[ID.dirt] = 1;
@@ -173,7 +175,7 @@ let destruction = [];
 
 function finishDestroying(destr) {
     if (destructible[tileAt(destr.x, destr.y)]) {
-        level[destr.y * levelW + destr.x] = 0;
+        level[destr.y * levelW + destr.x] = levelBackground[destr.y * levelW + destr.x];
     }
     checkGravity();
 
@@ -234,7 +236,7 @@ function checkGravity() {
                     targetY: y + 1,
                     id: tileAt(x, y),
                 };
-                level[y * levelW + x] = 0;
+                level[y * levelW + x] = levelBackground[y * levelW + x];
                 gravity.objs.push(fallObj);
                 objs.push(fallObj);
                 gravity.gravitying = true;
@@ -259,14 +261,16 @@ function finishGravity() {
     updateSelector();
 }
 
-// state:
-// STAND: waiting for input
-// MOVE: moving
-// FALL: falling down
-// DESTROY: we finished our animation but still destroying a block
-// PUSH: similar but pushing a block
-// GRAVITY: things are falling down
-let State = { STAND: 0, MOVE: 1, FALL: 2, DESTROY: 3, PUSH: 4, GRAVITY: 5, };
+/* state:
+ * STAND: waiting for input
+ * MOVE: moving
+ * FALL: falling down
+ * DESTROY: we finished our animation but still destroying a block
+ * PUSH: similar but pushing a block
+ * GRAVITY: things are falling down
+ * WIN: level finished, clicking should advance level
+ */
+let State = { STAND: 0, MOVE: 1, FALL: 2, DESTROY: 3, PUSH: 4, GRAVITY: 5, WIN: 6 };
 
 let gameState;
 
@@ -327,7 +331,7 @@ function updateSelector() {
     let selectorX = Math.floor(mouseX / drawScale / tileSize);
     let selectorY = Math.floor(mouseY / drawScale / tileSize);
 
-    // remove current selector if any and add new one if in bounds of canvas
+    /* remove current selector if any and add new one if in bounds of canvas */
     clearSelector();
     if (gameState == State.STAND) {
         if (selectorX >= 0 && selectorX < levelW && selectorY >= 0 && selectorY < levelH) {
@@ -358,83 +362,94 @@ document.onmousemove = function(e) {
 }
 
 function tileAt(x, y) {
-    // in this game, the outside is impassable/indestructible
+    /* in this game, the outside is impassable/indestructible */
     if (x < 0 || x >= levelW || y < 0 || y >= levelH) {
         return ID.metal;
     }
     return level[y * levelW + x];
 }
 
+document.onkeydown = function(e) {
+    if (e.keyCode == 82) {
+        reset();
+    }
+}
+
 document.onmousedown = function(e) {
-    let findSelector = objs.filter(o => o.id == ID.selector);
+    if (gameState != State.WIN) {
+        let findSelector = objs.filter(o => o.id == ID.selector);
 
-    if (findSelector.length > 0) {
-        /* If we have a thing selected, set that as our target location */
-        character.ultimateTargetX = findSelector[0].x;
-        character.ultimateTargetY = findSelector[0].y;
+        if (findSelector.length > 0) {
+            /* If we have a thing selected, set that as our target location */
+            character.ultimateTargetX = findSelector[0].x;
+            character.ultimateTargetY = findSelector[0].y;
 
-        character.targetX = character.ultimateTargetX;
-        character.targetY = character.ultimateTargetY;
-        if (Math.abs(character.ultimateTargetX - character.x) > 1) {
-            if (character.ultimateTargetX < character.x) {
-                character.targetX = character.x - 1;
-            } else {
-                character.targetX = character.x + 1;
+            character.targetX = character.ultimateTargetX;
+            character.targetY = character.ultimateTargetY;
+            if (Math.abs(character.ultimateTargetX - character.x) > 1) {
+                if (character.ultimateTargetX < character.x) {
+                    character.targetX = character.x - 1;
+                } else {
+                    character.targetX = character.x + 1;
+                }
             }
-        }
 
-        /* figure out which animation to play */
-        if (character.targetY == character.y) {
-            if (character.targetX == character.x - 1) {
-                if (!solid[tileAt(character.targetX, character.targetY)]) {
+            /* figure out which animation to play */
+            if (character.targetY == character.y) {
+                if (character.targetX == character.x - 1) {
+                    if (!solid[tileAt(character.targetX, character.targetY)]) {
+                        character.anim = 'jump_left';
+                    } else {
+                        character.anim = 'hit_left';
+                    }
+                } else if (character.targetX == character.x + 1) {
+                    if (!solid[tileAt(character.targetX, character.targetY)]) {
+                        character.anim = 'jump_right';
+                    } else {
+                        character.anim = 'hit_right';
+                    }
+                }
+            } else if (character.targetY == character.y - 1) {
+                if (character.targetX == character.x) {
+                    character.anim = 'jump_up';
+                } else if (character.targetX == character.x - 1) {
+                    character.anim = 'jump_up_left';
+                } else if (character.targetX == character.x + 1) {
+                    character.anim = 'jump_up_right';
+                }
+            } else if (character.targetY == character.y + 1) {
+                if (character.targetX == character.x) {
+                    if (!stopfall[tileAt(character.targetX, character.targetY)]) {
+                        character.anim = 'fall';
+                    } else {
+                        character.anim = 'hit_down';
+                    }
+                } else if (character.targetX == character.x - 1) {
                     character.anim = 'jump_left';
-                } else {
-                    character.anim = 'hit_left';
-                }
-            } else if (character.targetX == character.x + 1) {
-                if (!solid[tileAt(character.targetX, character.targetY)]) {
+                } else if (character.targetX == character.x + 1) {
                     character.anim = 'jump_right';
-                } else {
-                    character.anim = 'hit_right';
                 }
             }
-        } else if (character.targetY == character.y - 1) {
-            if (character.targetX == character.x) {
-                character.anim = 'jump_up';
-            } else if (character.targetX == character.x - 1) {
-                character.anim = 'jump_up_left';
-            } else if (character.targetX == character.x + 1) {
-                character.anim = 'jump_up_right';
-            }
-        } else if (character.targetY == character.y + 1) {
-            if (character.targetX == character.x) {
-                if (!stopfall[tileAt(character.targetX, character.targetY)]) {
-                    character.anim = 'fall';
-                } else {
-                    character.anim = 'hit_down';
-                }
-            } else if (character.targetX == character.x - 1) {
-                character.anim = 'jump_left';
-            } else if (character.targetX == character.x + 1) {
-                character.anim = 'jump_right';
-            }
+            character.animFrameIndex = 0;
+            character.frameTime = 0;
+            cancelAnim = true;
+
+            /* Now remove selector */
+            clearSelector();
+            gameState = State.MOVE;
+
+            startMove();
         }
-        character.animFrameIndex = 0;
-        character.frameTime = 0;
-        cancelAnim = true;
-
-        /* Now remove selector */
-        clearSelector();
-        gameState = State.MOVE;
-
-        startMove();
+    } else {
+        /* click when in State.WIN */
+        advanceLevel();
     }
 }
 
 function onMovedToSquare() {
     let tile = tileAt(character.x, character.y);
     if (tile == ID.gem_small || tile == ID.gem) {
-        level[character.y * levelW + character.x] = ID.empty;
+        level[character.y * levelW + character.x] = 0;
 
         objs.push({
             id: ID.sparkle,
@@ -448,8 +463,8 @@ function onMovedToSquare() {
         });
 
         if (tile == ID.gem_small) {
-            console.log("hi");
             let smallGemsLeft = level.filter(t => t == ID.gem_small).length;
+            /* if we captured all the small gems, manifest the big gem */
             if (smallGemsLeft == 0) {
                 for (let i = 0; i < level.length; i++) {
                     if (level[i] == ID.gem_hidden) {
@@ -464,6 +479,8 @@ function onMovedToSquare() {
                 }
             }
         }
+
+        checkGravity();
 
         if (tile == ID.gem) {
             objs.push({
@@ -486,6 +503,8 @@ function onMovedToSquare() {
                 frameLength: 400,
                 diesAfterAnimation: false,
             });
+            gameState = State.WIN;
+            wonLevel = true;
         }
     }
 }
@@ -528,7 +547,7 @@ function characterAnimFinished() {
     }
 
     if (stopfall[tileAt(character.x, character.y + 1)]) {
-        if (character.anim == 'jump_left' && character.ultimateTargetX < character.x) {
+        if (character.anim == 'jump_left' && character.ultimateTargetX < character.x && gameState != State.WIN) {
             character.targetX = character.x - 1;
             if (!solid[tileAt(character.targetX, character.targetY)]) {
                 character.anim = 'jump_left';
@@ -536,7 +555,7 @@ function characterAnimFinished() {
                 character.anim = 'hit_left';
             }
             cancelAnim = true;
-        } else if (character.anim == 'jump_right' && character.ultimateTargetX > character.x) {
+        } else if (character.anim == 'jump_right' && character.ultimateTargetX > character.x && gameState != State.WIN) {
             character.targetX = character.x + 1;
             if (!solid[tileAt(character.targetX, character.targetY)]) {
                 character.anim = 'jump_right';
@@ -552,7 +571,9 @@ function characterAnimFinished() {
         } else {
             character.anim = 'stand';
             cancelAnim = false;
-            if (gravity.gravitying) {
+            if (wonLevel) {
+                gameState = State.WIN;
+            } else if (gravity.gravitying) {
                 gameState = State.GRAVITY;
             } else if (push.pushing) {
                 gameState = State.PUSH;
@@ -573,11 +594,25 @@ function characterAnimFinished() {
 }
 
 function win() {
+    console.log("oh you won or whatever, cool");
 }
 
 function advanceLevel() {
+    console.log("ADVANCE LEVEL :O :O :O");
     levelNumber ++;
     loadLevel();
+}
+
+let wonLevel = false;
+
+function reset() {
+    console.log("reset");
+    loadLevel();
+    character.animFrameIndex = 0;
+    character.frameTime = 0;
+    character.anim = 'stand';
+    gameState = State.STAND;
+    cancelAnim = false;
 }
 
 function loadLevel() {
@@ -586,14 +621,24 @@ function loadLevel() {
     } else {
         prevObjs = [];
         objs = [];
-        level = levels[levelNumber - 1];
+        level = [];
+        levelBackground = [];
+        for (let l of levels[levelNumber - 1]) {
+            level.push(l);
+            if (solid[l]) {
+                levelBackground.push(0);
+            } else {
+                levelBackground.push(l);
+            }
+        }
 
         let charPos = level.indexOf(-1);
-        level[charPos] = 0;
+        level[charPos] = levelBackground[charPos];
         character.x = charPos % levelW;
         character.y = Math.floor(charPos / levelW);
 
         gameState = State.STAND;
+        wonLevel = false;
         checkGravity();
     }
 }
@@ -667,10 +712,6 @@ function checkMove(x, y) {
     return false;
 }
 
-function reset() {
-    gameState = State.STAND;
-}
-
 const OBJ_ANIM_FRAME_LENGTH = 100;
 const OBJ_FRAMES = 4;
 
@@ -714,7 +755,7 @@ function update(delta) {
     while (character.frameTime > charAnims[character.anim].frameLength) {
         character.frameTime = goodmod(character.frameTime, charAnims[character.anim].frameLength);
         character.animFrameIndex ++;
-        if (character.anim.startsWith("hit_") && character.animFrameIndex == 1) {
+        if (character.anim.startsWith("hit_") && character.animFrameIndex == 2) {
             if (pushable[tileAt(character.targetX, character.targetY)]) {
                 push.pushing = true;
                 push.timer = 0;
@@ -741,8 +782,16 @@ function update(delta) {
                         targetY: push.targetY,
                         id: tileAt(push.x, push.y),
                     };
-                    level[push.y * levelW + push.x] = 0;
+                    level[push.y * levelW + push.x] = levelBackground[push.y * levelW + push.x];
                     objs.push(push.targetObj);
+                } else {
+                    variants.push({
+                        x: push.x,
+                        y: push.y,
+                        timer: 0,
+                        length: 300,
+                    });
+                    push.pushing = false;
                 }
             } else {
                 destruction.push({
@@ -807,13 +856,13 @@ function draw() {
         let variant = 0;
         for (let d of destruction) {
             if (i == d.y * levelW + d.x) {
-                variant = Math.floor(d.timer / DESTROY_LENGTH * 4);
+                variant = Math.min(3, Math.floor(d.timer / DESTROY_LENGTH * 3 + 1));
             }
         }
 
         for (let v of variants) {
             if (i == v.y * levelW + v.x) {
-                variant = Math.floor(v.timer / v.length * 4);
+                variant = Math.min(3, Math.floor(v.timer / v.length * 3 + 1));
             }
         }
 
@@ -835,14 +884,13 @@ function draw() {
             let mf = objs[i].moveFraction;
             ctx.drawImage(tiles,
                     objs[i].id * tileSize, (objs[i].frame || 0) * tileSize, tileSize, tileSize,
-                    // divide and round for pixel-y movement
+                    /* divide and round for pixel-y movement */
                     Math.round((objs[i].x * (1 - mf) + objs[i].targetX * mf) * tileSize),
                     Math.round((objs[i].y * (1 - mf) + objs[i].targetY * mf) * tileSize),
                     tileSize, tileSize);
         } else {
             ctx.drawImage(tiles,
                     objs[i].id * tileSize, (objs[i].frame || 0) * tileSize, tileSize, tileSize,
-                    // divide and round for pixel-y movement
                     objs[i].x * tileSize, objs[i].y * tileSize, tileSize, tileSize);
         }
     }
