@@ -9,14 +9,42 @@ window.requestAnimFrame = (function() {
         };
 })();
 
+let bgm;
+let audiocheck = document.createElement('audio');
+
+let titleScreenImg = new Image();
+
+let sfx = {
+    boxslide: new Audio('sfx/boxslide.wav'),
+    crumble: new Audio('sfx/crumble.wav'),
+    dirtbreak: new Audio('sfx/dirtbreak.wav'),
+    jump: new Audio('sfx/jump.wav'),
+    majortokenget: new Audio('sfx/majortokenget.wav'),
+    minortokenget: new Audio('sfx/minortokenget.wav'),
+    objland: new Audio('sfx/objland.wav'),
+    sandbreak: new Audio('sfx/sandbreak.wav'),
+};
+
+let helpImgs = {
+    1: new Image(),
+    2: new Image(),
+    3: new Image(),
+    7: new Image(),
+    11: new Image(),
+    15: new Image(),
+};
+
+sfx.jump.volume = 0.8;
+sfx.majortokenget.volume = 0.3;
+sfx.minortokenget.volume = 0.3;
+
+let victoryLevel = [3,0,0,0,0,0,0,0,0,3,3,17,18,19,0,19,20,21,22,3,3,0,0,0,0,0,0,0,0,3,3,8,0,0,0,0,0,0,8,3,3,3,8,0,-1,7,0,8,3,3,3,10,10,10,10,10,10,10,10,3,11,1,1,11,4,4,11,1,1,11,];
+
 function goodmod(x, n) {
      return ((x%n)+n)%n;
 }
 
 let won = false;
-
-let sfx = {
-};
 
 let objs = [];
 
@@ -61,6 +89,7 @@ let ID = {
     sparkle: 13,
     love1: 14,
     love2: 15,
+    help: 16,
 };
 
 /* I am so sorry, I have no idea why i defined all the properties like this */
@@ -76,6 +105,7 @@ selectable[ID.gem_small] = 1;
 selectable[ID.cloud] = 1;
 selectable[ID.sand] = 1;
 selectable[ID.crumble] = 1;
+selectable[ID.help] = 1;
 
 let solid = {};
 solid[ID.empty] = 0;
@@ -89,6 +119,7 @@ solid[ID.gem_small] = 0;
 solid[ID.cloud] = 0;
 solid[ID.sand] = 1;
 solid[ID.crumble] = 1;
+solid[ID.help] = 0;
 
 let destructible = {};
 destructible[ID.empty] = 0;
@@ -141,6 +172,7 @@ stopfall[ID.gem_small] = 0;
 stopfall[ID.cloud] = 1;
 stopfall[ID.sand] = 1;
 stopfall[ID.crumble] = 1;
+stopfall[ID.help] = 0;
 
 let crumbles = {};
 crumbles[ID.empty] = 0;
@@ -228,6 +260,8 @@ let gravity = {
 }
 
 function checkGravity() {
+    if (gameState == State.PUSH) return;
+
     for (let y = levelH - 2; y >= 0; y--) {
         for (let x = 0; x < levelW; x++) {
             if (gravitybound[tileAt(x, y)] && !stopfall[tileAt(x, y + 1)]) {
@@ -264,6 +298,10 @@ function finishGravity() {
     gravity.objs = [];
     gameState = State.STAND;
     checkGravity();
+    if (gameState != State.GRAVITY) {
+        sfx.objland.currentTime = 0;
+        sfx.objland.play();
+    }
     updateSelector();
 }
 
@@ -275,10 +313,24 @@ function finishGravity() {
  * PUSH: similar but pushing a block
  * GRAVITY: things are falling down
  * WIN: level finished, clicking should advance level
+ * HELP: showing help image
  */
-let State = { STAND: 0, MOVE: 1, FALL: 2, DESTROY: 3, PUSH: 4, GRAVITY: 5, WIN: 6 };
+let State = { STAND: 0, MOVE: 1, FALL: 2, DESTROY: 3, PUSH: 4, GRAVITY: 5, WIN: 6, HELP: 7 };
 
 let gameState;
+
+let started = false;
+
+let muted = false;
+
+function toggleMute() {
+    muted = !muted;
+    if (muted) {
+        bgm.pause();
+    } else {
+        bgm.play();
+    }
+}
 
 ready(function() {
     canvas = document.getElementById('canvas');
@@ -290,18 +342,28 @@ ready(function() {
     tiles = new Image();
     characterImg = new Image();
 
-    tiles.onload = function() {
-        initialize();
-    }
     tiles.src = 'tiles.png';
     characterImg.src = 'slime.png'
+    titleScreenImg.src = 'titlescreen.png';
+
+    for (let key in helpImgs) {
+        helpImgs[key].src = 'tutorial/help' + key + '.png';
+    }
+
+    if (audiocheck.canPlayType('audio/mpeg')) {
+        bgm = new Audio('bgm.mp3');
+    } else if (audiocheck.canPlayType('audio/ogg')) {
+        bgm = new Audio('bgm.ogg');
+    }
+    bgm.loop = true;
+
+    loop();
 });
 
 function initialize() {
     levelNumber = 1;
     loadLevel();
-
-    loop();
+    bgm.play();
 }
 
 let keepGoing = true;
@@ -379,10 +441,21 @@ document.onkeydown = function(e) {
     if (e.keyCode == 82) {
         reset();
     }
+    if (e.keyCode == 77) {
+        toggleMute();
+    }
 }
 
+let doingHelp = false;
+
 document.onmousedown = function(e) {
-    if (gameState != State.WIN) {
+    if (!started) {
+        started = true;
+        initialize();
+    } else if (gameState == State.HELP) {
+        doingHelp = false;
+        gameState = State.STAND;
+    } else if (gameState != State.WIN) {
         let findSelector = objs.filter(o => o.id == ID.selector);
 
         if (findSelector.length > 0) {
@@ -469,6 +542,9 @@ function onMovedToSquare() {
         });
 
         if (tile == ID.gem_small) {
+            sfx.minortokenget.currentTime = 0;
+            sfx.minortokenget.play();
+
             let smallGemsLeft = level.filter(t => t == ID.gem_small).length;
             /* if we captured all the small gems, manifest the big gem */
             if (smallGemsLeft == 0) {
@@ -489,6 +565,9 @@ function onMovedToSquare() {
         checkGravity();
 
         if (tile == ID.gem) {
+            sfx.majortokenget.currentTime = 0;
+            sfx.majortokenget.play();
+
             objs.push({
                 id: ID.love1,
                 x: character.x,
@@ -513,17 +592,28 @@ function onMovedToSquare() {
             wonLevel = true;
         }
     }
+
+    if (tile == ID.help) {
+        if (helpImgs[levelNumber]) {
+            gameState = State.HELP;
+            doingHelp = true;
+        }
+    }
 }
 
 function startMove() {
     if (character.targetX != character.x || character.targetY != character.targetY) {
-        if (!solid[tileAt(character.targetX, character.targetY)]) {
-            if (crumbles[tileAt(character.x, character.y + 1)]) {
-                destruction.push({
-                    timer: 0,
-                    x: character.x,
-                    y: character.y + 1,
-                });
+        if (!character.anim.startsWith("hit_") && character.anim != 'stand') {
+            if (!solid[tileAt(character.targetX, character.targetY)]) {
+                if (crumbles[tileAt(character.x, character.y + 1)]) {
+                    sfx.crumble.currentTime = 0;
+                    sfx.crumble.play();
+                    destruction.push({
+                        timer: 0,
+                        x: character.x,
+                        y: character.y + 1,
+                    });
+                }
             }
         }
     }
@@ -559,6 +649,8 @@ function characterAnimFinished() {
             character.targetX = character.x - 1;
             if (!solid[tileAt(character.targetX, character.targetY)]) {
                 character.anim = 'jump_left';
+                sfx.jump.currentTime = 0;
+                sfx.jump.play();
             } else {
                 character.anim = 'hit_left';
             }
@@ -567,6 +659,8 @@ function characterAnimFinished() {
             character.targetX = character.x + 1;
             if (!solid[tileAt(character.targetX, character.targetY)]) {
                 character.anim = 'jump_right';
+                sfx.jump.currentTime = 0;
+                sfx.jump.play();
             } else {
                 character.anim = 'hit_right';
             }
@@ -576,15 +670,23 @@ function characterAnimFinished() {
             character.anim = 'land';
             gameState = State.MOVE;
             cancelAnim = true;
+
+            sfx.jump.currentTime = 0;
+            sfx.jump.play();
         } else {
+            if (character.anim.startsWith('hit_')) {
+                /* landing after a hit so play the landing sound effect */
+                sfx.jump.currentTime = 0;
+                sfx.jump.play();
+            }
             character.anim = 'stand';
             cancelAnim = false;
             if (wonLevel) {
                 gameState = State.WIN;
-            } else if (gravity.gravitying) {
-                gameState = State.GRAVITY;
             } else if (push.pushing) {
                 gameState = State.PUSH;
+            } else if (gravity.gravitying) {
+                gameState = State.GRAVITY;
             } else if (destruction.length > 0) {
                 gameState = State.DESTROY;
             } else {
@@ -603,11 +705,32 @@ function characterAnimFinished() {
 }
 
 function win() {
-    console.log("oh you won or whatever, cool");
+    loadLevelData(victoryLevel);
+    gameState = State.WIN;
+
+    objs.push({
+        id: ID.love1,
+        x: character.x,
+        y: character.y - 1,
+        animates: true,
+        frame: 0,
+        frameTime: 0,
+        frameLength: 400,
+        diesAfterAnimation: false,
+    });
+    objs.push({
+        id: ID.love2,
+        x: character.x,
+        y: character.y,
+        animates: true,
+        frame: 0,
+        frameTime: 0,
+        frameLength: 400,
+        diesAfterAnimation: false,
+    });
 }
 
 function advanceLevel() {
-    console.log("ADVANCE LEVEL :O :O :O");
     levelNumber ++;
     loadLevel();
 }
@@ -615,7 +738,6 @@ function advanceLevel() {
 let wonLevel = false;
 
 function reset() {
-    console.log("reset");
     loadLevel();
     character.animFrameIndex = 0;
     character.frameTime = 0;
@@ -628,29 +750,33 @@ function loadLevel() {
     if (levelNumber > levels.length) {
         win();
     } else {
-        prevObjs = [];
-        objs = [];
-        level = [];
-        levelBackground = [];
-        for (let l of levels[levelNumber - 1]) {
-            level.push(l);
-            if (solid[l]) {
-                levelBackground.push(0);
-            } else {
-                levelBackground.push(l);
-            }
-        }
-
-        let charPos = level.indexOf(-1);
-        level[charPos] = levelBackground[charPos];
-        character.x = charPos % levelW;
-        character.y = Math.floor(charPos / levelW);
-
-        gameState = State.STAND;
-        wonLevel = false;
-        checkGravity();
-        updateSelector();
+        loadLevelData(levels[levelNumber - 1]);
     }
+}
+
+function loadLevelData(lvl) {
+    prevObjs = [];
+    objs = [];
+    level = [];
+    levelBackground = [];
+    for (let l of lvl) {
+        level.push(l);
+        if (solid[l]) {
+            levelBackground.push(0);
+        } else {
+            levelBackground.push(l);
+        }
+    }
+
+    let charPos = level.indexOf(-1);
+    level[charPos] = 0;
+    character.x = charPos % levelW;
+    character.y = Math.floor(charPos / levelW);
+
+    gameState = State.STAND;
+    wonLevel = false;
+    checkGravity();
+    updateSelector();
 }
 
 let moveFraction = 0;
@@ -785,6 +911,9 @@ function update(delta) {
                 }
 
                 if (push.targetX != push.x) {
+                    sfx.boxslide.currentTime = 0;
+                    sfx.boxslide.play();
+
                     push.targetObj = {
                         x: push.x,
                         y: push.y,
@@ -794,6 +923,16 @@ function update(delta) {
                     };
                     level[push.y * levelW + push.x] = levelBackground[push.y * levelW + push.x];
                     objs.push(push.targetObj);
+
+                    if (crumbles[tileAt(push.x, push.y + 1)]) {
+                        sfx.crumble.currentTime = 0;
+                        sfx.crumble.play();
+                        destruction.push({
+                            timer: 0,
+                            x: push.x,
+                            y: push.y + 1,
+                        });
+                    }
                 } else {
                     variants.push({
                         x: push.x,
@@ -804,6 +943,16 @@ function update(delta) {
                     push.pushing = false;
                 }
             } else {
+                if (tileAt(character.targetX, character.targetY) == ID.dirt) {
+                    sfx.dirtbreak.currentTime = 0;
+                    sfx.dirtbreak.play();
+                } else if (tileAt(character.targetX, character.targetY) == ID.sand) {
+                    sfx.sandbreak.currentTime = 0;
+                    sfx.sandbreak.play();
+                } else if (tileAt(character.targetX, character.targetY) == ID.crumble) {
+                    sfx.crumble.currentTime = 0;
+                    sfx.crumble.play();
+                }
                 destruction.push({
                     timer: 0,
                     x: character.targetX,
@@ -848,6 +997,8 @@ function update(delta) {
             }
         }
     }
+
+    if (doingHelp) gameState = State.HELP;
 }
 
 function draw() {
@@ -903,6 +1054,15 @@ function draw() {
                     objs[i].id * tileSize, (objs[i].frame || 0) * tileSize, tileSize, tileSize,
                     objs[i].x * tileSize, objs[i].y * tileSize, tileSize, tileSize);
         }
+    }
+
+    if (gameState == State.HELP) {
+        ctx.drawImage(helpImgs[levelNumber], 0, 0);
+    }
+
+    if (!started) {
+        console.log("hi");
+        ctx.drawImage(titleScreenImg, 0, 0);
     }
 
     ctx.restore();
